@@ -11,6 +11,7 @@ services:
     depends_on:
       - postgres
       - elasticsearch
+      - ml-service
     environment:
       - POSTGRES_HOST=postgres
       - ELASTICSEARCH_URL=http://elasticsearch:9200
@@ -35,3 +36,23 @@ services:
       - xpack.security.enabled=false
     ports:
       - "9200:9200"
+
+  ml-service:
+    build: 
+      context: ./ml_service
+      dockerfile: Dockerfile
+    container_name: ml-service
+    ports:
+      - "5000:5000"
+      - "5001:5001"
+    volumes:
+      - ./ml_service/config.yaml:/app/config.yaml
+    # Optional: Enable GPU support if you have Nvidia drivers installed
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    restart: on-failure
