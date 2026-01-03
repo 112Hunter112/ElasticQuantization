@@ -466,7 +466,9 @@ class NeuralODEConsistencyPredictor(eqx.Module):
         eps = jr.normal(key, mu.shape)
         return mu + eps * std
     
-    @partial(jit, static_argnums=(0, 4))
+# REPLACE THE OLD DECORATOR: @partial(jit, static_argnums=(0, 4))
+    # WITH THIS NEW DECORATOR:
+    @eqx.filter_jit 
     def predict_with_uncertainty(
         self,
         x_history: jnp.ndarray,
@@ -478,18 +480,6 @@ class NeuralODEConsistencyPredictor(eqx.Module):
     ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         """
         Predict future state with epistemic + aleatoric uncertainty
-        
-        Args:
-            x_history: Historical vectors [batch, seq_len, input_dim]
-            t_history: Historical timestamps [batch, seq_len, 1]
-            t_target: Target prediction times [batch, n_targets]
-            n_samples: Number of MC samples
-            key: PRNG key
-            
-        Returns:
-            pred_mean: Mean predictions
-            pred_std: Total uncertainty (epistemic + aleatoric)
-            anomaly_scores: Deviation from expected dynamics
         """
         keys = jr.split(key, n_samples + 2)
         
