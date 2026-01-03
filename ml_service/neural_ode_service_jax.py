@@ -729,7 +729,7 @@ def predict():
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
-
+#
 @app.route('/stiffness', methods=['POST'])
 def check_stiffness():
     """Check if current dynamics are stiff"""
