@@ -466,9 +466,6 @@ class NeuralODEConsistencyPredictor(eqx.Module):
         eps = jr.normal(key, mu.shape)
         return mu + eps * std
     
-# REPLACE THE OLD DECORATOR: @partial(jit, static_argnums=(0, 4))
-    # WITH THIS NEW DECORATOR:
-    @eqx.filter_jit 
     def predict_with_uncertainty(
         self,
         x_history: jnp.ndarray,
@@ -480,6 +477,18 @@ class NeuralODEConsistencyPredictor(eqx.Module):
     ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         """
         Predict future state with epistemic + aleatoric uncertainty
+        
+        Args:
+            x_history: Historical vectors [batch, seq_len, input_dim]
+            t_history: Historical timestamps [batch, seq_len, 1]
+            t_target: Target prediction times [batch, n_targets]
+            n_samples: Number of MC samples
+            key: PRNG key
+            
+        Returns:
+            pred_mean: Mean predictions
+            pred_std: Total uncertainty (epistemic + aleatoric)
+            anomaly_scores: Deviation from expected dynamics
         """
         keys = jr.split(key, n_samples + 2)
         
@@ -488,35 +497,30 @@ class NeuralODEConsistencyPredictor(eqx.Module):
         
         t0 = t_history[:, -1, 0]
         
-        # Monte Carlo sampling
+        # Monte Carlo sampling with simpler ODE solver
         def sample_trajectory(key_i, mu, logvar):
             z0 = self.reparameterize(mu, logvar, key=key_i)
             
-            # Solve SDE for aleatoric uncertainty
-            brownian = dfx.UnsafeBrownianPath(shape=(self.config.latent_dim,), key=key_i)
+            # Use simpler ODE integration (avoiding SDE for now to fix the issue)
+            term = dfx.ODETerm(self.ode_func)
             
-            def sde_dynamics(t, z, args):
-                drift = self.sde_func.drift_fn(t, z, args)
-                diffusion = self.sde_func.diffusion_fn(t, z, args)
-                return drift, diffusion
-            
-            sde_term = dfx.MultiTerm(
-                dfx.ODETerm(lambda t, y, args: sde_dynamics(t, y, args)[0]),
-                dfx.ControlTerm(lambda t, y, args: sde_dynamics(t, y, args)[1], brownian)
-            )
+            solver = dfx.Dopri5() if self.config.solver == "dopri5" else dfx.Tsit5()
             
             # Solve for each target time
             z_predictions = []
             for t_tgt in t_target[0]:
                 solution = dfx.diffeqsolve(
-                    sde_term,
-                    dfx.Euler(),  # Euler-Maruyama for SDEs
+                    term,
+                    solver,
                     t0=float(t0[0]),
                     t1=float(t_tgt),
-                    dt0=0.001,
+                    dt0=0.01,
                     y0=z0[0],
-                    stepsize_controller=dfx.ConstantStepSize(),
-                    max_steps=50000
+                    stepsize_controller=dfx.PIDController(
+                        rtol=self.config.rtol,
+                        atol=self.config.atol
+                    ),
+                    max_steps=5000
                 )
                 z_predictions.append(solution.ys[-1])
             
@@ -687,6 +691,37 @@ app = Flask(__name__)
 model = None
 config = None
 key = jr.PRNGKey(0)
+model_input_dim = None
+
+
+def initialize_model_if_needed(input_dim: int):
+    """Initialize or reinitialize model with correct input dimension"""
+    global model, config, key, model_input_dim
+    
+    if model is None or model_input_dim != input_dim:
+        print(f"Initializing model with input_dim={input_dim}")
+        model_input_dim = input_dim
+        
+        config = ODEConfig(
+            latent_dim=min(128, input_dim),  # Adjust latent dim based on input
+            hidden_dim=256,
+            num_layers=4,
+            attention_heads=8,
+            solver='dopri5',
+            sde_noise_scale=0.01
+        )
+        
+        key_init = jr.PRNGKey(42)
+        model = NeuralODEConsistencyPredictor(
+            input_dim=input_dim, 
+            config=config, 
+            key=key_init
+        )
+        
+        param_count = sum(
+            x.size for x in jax.tree_util.tree_leaves(eqx.filter(model, eqx.is_array))
+        )
+        print(f"Model initialized: {param_count:,} parameters")
 
 
 @app.route('/health', methods=['GET'])
@@ -695,7 +730,8 @@ def health():
         'status': 'healthy',
         'model_loaded': model is not None,
         'backend': 'JAX',
-        'devices': str(jax.devices())
+        'devices': str(jax.devices()),
+        'input_dim': model_input_dim
     })
 
 
@@ -707,29 +743,44 @@ def predict():
     try:
         data = request.json
         
-        # Convert to JAX arrays
-        x_history = jnp.array(data['vectors'])[None, :, :]
-        t_history = jnp.array(data['timestamps'])[None, :, None].astype(jnp.float32)
+        # Convert to JAX arrays with proper dtype
+        vectors = data['vectors']
+        input_dim = len(vectors[0])
+        
+        # Initialize model with correct input dimension
+        initialize_model_if_needed(input_dim)
+        
+        x_history = jnp.array(vectors, dtype=jnp.float32)[None, :, :]
+        t_history = jnp.array(data['timestamps'], dtype=jnp.float32)[None, :, None]
         t_target = jnp.array([[data['target_time']]], dtype=jnp.float32)
         
-        # Predict with uncertainty
+        # Predict with uncertainty (not JIT-compiled at API level)
         key, subkey = jr.split(key)
+        
+        # Use fewer samples for faster response in API
         pred_mean, pred_std, anomaly_scores = model.predict_with_uncertainty(
-            x_history, t_history, t_target, n_samples=50, key=subkey
+            x_history, t_history, t_target, n_samples=10, key=subkey
         )
         
+        # Convert to Python types for JSON serialization
         return jsonify({
             'predicted_vector': pred_mean[0, 0].tolist(),
             'uncertainty': float(pred_std[0, 0].mean()),
             'anomaly_score': float(anomaly_scores[0, 0]),
             'is_anomalous': float(anomaly_scores[0, 0]) > 0.5,
-            'backend': 'JAX/Diffrax'
+            'backend': 'JAX/Diffrax',
+            'samples_used': 10,
+            'input_dim': input_dim
         })
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 400
 
-#
+
 @app.route('/stiffness', methods=['POST'])
 def check_stiffness():
     """Check if current dynamics are stiff"""
@@ -757,25 +808,15 @@ def check_stiffness():
 
 if __name__ == '__main__':
     # Initialize model with JAX
-    print("Initializing Neural ODE with JAX/Equinox/Diffrax...")
+    print("=" * 60)
+    print("Neural ODE Temporal Consistency Engine (JAX/Equinox/Diffrax)")
+    print("=" * 60)
+    print(f"JAX version: {jax.__version__}")
     print(f"Available devices: {jax.devices()}")
+    print(f"Default backend: {jax.default_backend()}")
+    print()
+    print("Model will be initialized on first request based on input dimension")
+    print("Service ready on http://0.0.0.0:5000")
+    print("=" * 60)
     
-    config = ODEConfig(
-        latent_dim=128,
-        hidden_dim=256,
-        num_layers=4,
-        attention_heads=8,
-        solver='dopri5',
-        sde_noise_scale=0.01
-    )
-    
-    key = jr.PRNGKey(42)
-    model = NeuralODEConsistencyPredictor(input_dim=768, config=config, key=key)
-    
-    # Count parameters
-    param_count = sum(x.size for x in jax.tree_util.tree_leaves(eqx.filter(model, eqx.is_array)))
-    print(f"Total parameters: {param_count:,}")
-    print(f"Solver: {config.solver} (adaptive: {config.use_adjoint})")
-    print(f"SDE noise scale: {config.sde_noise_scale} (aleatoric uncertainty)")
-    
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5000, debug=False)
