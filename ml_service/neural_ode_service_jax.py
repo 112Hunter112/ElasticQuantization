@@ -48,6 +48,12 @@ class TemporalAttention(eqx.Module):
     scale: float
     
     def __init__(self, dim: int, heads: int = 8, dropout: float = 0.1, *, key):
+        # Validate dimensions
+        if dim < heads:
+            raise ValueError(f"dim ({dim}) must be >= heads ({heads})")
+        if dim % heads != 0:
+            raise ValueError(f"dim ({dim}) must be divisible by heads ({heads})")
+        
         self.heads = heads
         self.scale = (dim // heads) ** -0.5
         
@@ -386,7 +392,7 @@ class NeuralODEConsistencyPredictor(eqx.Module):
         eps = jr.normal(key, mu.shape)
         return mu + eps * std
     
-    @eqx.filter_jit
+    @eqx.filter_jit  # CRITICAL: Use eqx.filter_jit, not @jit
     def predict_with_uncertainty(
         self,
         x_history: jnp.ndarray,
@@ -563,13 +569,23 @@ class ModelState:
         with self.lock:
             if self.model is None or self.input_dim != input_dim:
                 print(f"Initializing model with input_dim={input_dim}")
+                print(f"  → latent_dim will be scaled appropriately")
                 self.input_dim = input_dim
                 
+                # Smart dimension scaling based on input size
+                # Ensure latent_dim is divisible by attention_heads
+                latent_dim = max(16, min(128, input_dim * 8))  # Scale up small inputs
+                attention_heads = min(8, latent_dim // 16)  # Ensure at least 16 dims per head
+                attention_heads = max(1, attention_heads)  # At least 1 head
+                
+                # Ensure divisibility
+                latent_dim = attention_heads * (latent_dim // attention_heads)
+                
                 self.config = ODEConfig(
-                    latent_dim=min(128, input_dim),
-                    hidden_dim=256,
-                    num_layers=4,
-                    attention_heads=8,
+                    latent_dim=latent_dim,
+                    hidden_dim=max(64, latent_dim * 2),
+                    num_layers=3 if input_dim < 32 else 4,
+                    attention_heads=attention_heads,
                     solver='dopri5',
                     sde_noise_scale=0.01
                 )
@@ -586,7 +602,8 @@ class ModelState:
                         eqx.filter(self.model, eqx.is_array)
                     )
                 )
-                print(f"Model initialized: {param_count:,} parameters")
+                print(f"  → latent_dim={latent_dim}, heads={attention_heads}")
+                print(f"  → Total parameters: {param_count:,}")
 
 state = ModelState()
 
