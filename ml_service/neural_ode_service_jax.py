@@ -337,7 +337,7 @@ class LatentODEEncoder(eqx.Module):
         h_all = jax.vmap(process_sequence)(xt)  # [batch, seq, hidden]
         
         # Apply attention
-        h_attn = self.temporal_attn(h_all, key=key, inference=True)
+        h_attn = self.attention(h_all, key=key, inference=True)
         
         # Final hidden state
         h_final = h_attn[:, -1, :]
@@ -392,7 +392,6 @@ class NeuralODEConsistencyPredictor(eqx.Module):
         eps = jr.normal(key, mu.shape)
         return mu + eps * std
     
-    @eqx.filter_jit  # CRITICAL: Use eqx.filter_jit, not @jit
     def predict_with_uncertainty(
         self,
         x_history: jnp.ndarray,
