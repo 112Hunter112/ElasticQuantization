@@ -304,7 +304,8 @@ class LatentODEEncoder(eqx.Module):
     def __init__(self, input_dim: int, latent_dim: int, hidden_dim: int = 128, *, key):
         keys = jr.split(key, 4)
         self.gru = eqx.nn.GRUCell(input_dim + 1, hidden_dim, key=keys[0])
-        self.attention = TemporalAttention(hidden_dim, heads=4, key=keys[1])
+        # FIXED: Attention operates on hidden_dim, not latent_dim
+        self.attention = TemporalAttention(hidden_dim, heads=min(4, hidden_dim // 16), key=keys[1])
         self.fc_mu = eqx.nn.Linear(hidden_dim, latent_dim, key=keys[2])
         self.fc_logvar = eqx.nn.Linear(hidden_dim, latent_dim, key=keys[3])
         self.hidden_dim = hidden_dim
@@ -381,7 +382,15 @@ class NeuralODEConsistencyPredictor(eqx.Module):
         self.config = config or ODEConfig()
         keys = jr.split(key, 4)
         
-        self.encoder = LatentODEEncoder(input_dim, self.config.latent_dim, key=keys[0])
+        # Calculate appropriate hidden_dim for encoder
+        encoder_hidden = max(64, self.config.latent_dim * 2)
+        
+        self.encoder = LatentODEEncoder(
+            input_dim, 
+            self.config.latent_dim, 
+            hidden_dim=encoder_hidden,
+            key=keys[0]
+        )
         self.ode_func = LatentODEFunc(self.config, key=keys[1])
         self.cnf = ContinuousNormalizingFlow(self.config, key=keys[2])
         self.decoder = LatentODEDecoder(self.config.latent_dim, input_dim, key=keys[3])
