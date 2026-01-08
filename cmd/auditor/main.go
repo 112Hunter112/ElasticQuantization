@@ -16,6 +16,7 @@ import (
 	"github.com/yourusername/consistency-auditor/internal/config"
 	"github.com/yourusername/consistency-auditor/internal/healer"
 	"github.com/yourusername/consistency-auditor/internal/metrics"
+	"github.com/yourusername/consistency-auditor/internal/ml" // Import the ML package
 	"github.com/yourusername/consistency-auditor/internal/storage"
 	"github.com/yourusername/consistency-auditor/pkg/quantizer"
 	"github.com/yourusername/consistency-auditor/pkg/sketch"
@@ -39,6 +40,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+
+	// 1. Initialize ML Client ("The Brain")
+	// Point to the internal Docker DNS name 'ml-service' on port 5000
+	mlClient := ml.NewClient("http://ml-service:5000")
+	log.Println("Neural ODE Client initialized")
 
 	db, err := storage.NewPostgresDB(cfg.Database)
 	if err != nil {
@@ -89,7 +95,8 @@ func main() {
 	}
 	defer cdcListener.Stop()
 
-	consistencyChecker := checker.NewConsistencyChecker(db, esClient, cfg.Checker, sketchAgg)
+	// 2. Inject ML Client into Consistency Checker
+	consistencyChecker := checker.NewConsistencyChecker(db, esClient, cfg.Checker, sketchAgg, mlClient)
 
 	autoHealer := healer.NewAutoHealer(db, esClient, cfg.Healer)
 
