@@ -55,4 +55,6 @@ services:
     #         - driver: nvidia
     #           count: 1
     #           capabilities: [gpu]
+    environment:
+      - JAX_PLATFORMS=cpu   # <--- ADD THIS LINE
     restart: on-failure
