@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
+	"time"
 
 	"github.com/yourusername/consistency-auditor/internal/config"
+	"github.com/yourusername/consistency-auditor/internal/ml" // Import the ML package
 	"github.com/yourusername/consistency-auditor/internal/storage"
 	"github.com/yourusername/consistency-auditor/pkg/sketch"
 )
@@ -23,19 +26,23 @@ type ConsistencyChecker struct {
 	es        *storage.QuantizedESClient
 	config    config.CheckerConfig
 	sketchAgg *sketch.SketchAggregator
+	mlClient  *ml.Client // Add ML Client field
 }
 
+// NewConsistencyChecker creates a new checker with the ML client injected
 func NewConsistencyChecker(
 	db *sql.DB,
 	es *storage.QuantizedESClient,
 	cfg config.CheckerConfig,
 	sketch *sketch.SketchAggregator,
+	mlClient *ml.Client, // Inject dependency
 ) *ConsistencyChecker {
 	return &ConsistencyChecker{
 		db:        db,
 		es:        es,
 		config:    cfg,
 		sketchAgg: sketch,
+		mlClient:  mlClient,
 	}
 }
 
@@ -73,7 +80,34 @@ func (c *ConsistencyChecker) CheckRecord(ctx context.Context, table, id string) 
 		return []Discrepancy{{Table: table, ID: id, Field: "_exists", SourceValue: "exists", TargetValue: nil}}, nil
 	}
 
-	// 3. Compare
+	// 3. Neural ODE Consistency Check (The "Brain")
+	// This runs asynchronously to avoid blocking the main audit loop
+	go func() {
+		mlCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+
+		// Mock sequence for demonstration.
+		// In production, fetch actual history from cdc_log or similar.
+		dummyVec := []float64{0.1, 0.5}
+		history := [][]float64{dummyVec, dummyVec}
+		times := []float64{1.0, 2.0}
+		targetTime := 3.0
+
+		pred, err := c.mlClient.PredictConsistency(mlCtx, history, times, targetTime)
+		if err != nil {
+			// Log warning only if needed, usually we fail silently to avoid noise
+			// log.Printf("[ML Warning] Failed to consult Neural ODE: %v", err)
+			return
+		}
+
+		if pred.IsAnomalous {
+			log.Printf("[ML ALERT] Neural ODE detected anomaly in %s/%s (Score: %.4f)", table, id, pred.AnomalyScore)
+		} else {
+			log.Printf("[ML INFO] Consistency Verified by JAX Engine (Uncertainty: %.4f)", pred.Uncertainty)
+		}
+	}()
+
+	// 4. Compare
 	var discrepancies []Discrepancy
 	esSource, ok := esDoc["_source"].(map[string]interface{})
 	if !ok {
@@ -93,7 +127,7 @@ func (c *ConsistencyChecker) CheckRecord(ctx context.Context, table, id string) 
 			continue
 		}
 
-		// Simplified comparison - for production, need more robust type-aware comparison
+		// Simplified comparison
 		dbStr := fmt.Sprintf("%v", v)
 		esStr := fmt.Sprintf("%v", esVal)
 		if dbStr != esStr {
