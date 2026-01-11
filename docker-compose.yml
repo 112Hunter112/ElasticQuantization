@@ -17,7 +17,7 @@ services:
       - ELASTICSEARCH_URL=http://elasticsearch:9200
 
   postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     # Required for CDC: enables logical decoding in the Write-Ahead Log
     command: ["postgres", "-c", "wal_level=logical"]
     environment:
