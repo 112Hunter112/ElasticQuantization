@@ -1,7 +1,7 @@
 # Neural ODE Temporal Consistency Engine: Mathematical Background
 
-**Authors:** Aether Team  
-**Last Updated:** January 2025  
+**Authors:** Parth Aditya  
+**Last Updated:** January 2026  
 **Version:** 1.0
 
 ---
@@ -598,7 +598,7 @@ $$\text{Tr}(\mathbf{J}) \approx \boldsymbol{\epsilon}^T \cdot \text{VJP}(f, \mat
 
 **Document Version Control:**
 
-- v1.0 (January 2025): Initial release
+- v1.0 (January 2026): Initial release
 - Future updates will include empirical validation results and extended case studies
 
 **Feedback:** For corrections or questions, please contact the Aether team or open an issue in the repository.
