@@ -36,6 +36,7 @@ type CDCListener struct {
 	stopChan  chan struct{}
 	conn      *pgconn.PgConn
 	relations map[uint32]*pglogrepl.RelationMessage
+	walPos    pglogrepl.LSN
 }
 
 func NewCDCListener(cfg config.CDCConfig, dbCfg config.DatabaseConfig) *CDCListener {
@@ -100,7 +101,7 @@ func (l *CDCListener) listen() {
 			return
 		default:
 			if time.Now().After(nextStandbyMessageDeadline) {
-				err := pglogrepl.SendStandbyStatusUpdate(context.Background(), l.conn, pglogrepl.StandbyStatusUpdate{WALWritePosition: 0})
+				err := pglogrepl.SendStandbyStatusUpdate(context.Background(), l.conn, pglogrepl.StandbyStatusUpdate{WALWritePosition: l.walPos})
 				if err != nil {
 					log.Printf("Failed to send standby status update: %v", err)
 				}
@@ -148,6 +149,7 @@ func (l *CDCListener) listen() {
 					}
 
 					l.processLogicalMsg(xld.WALData)
+					l.walPos = xld.WALStart + pglogrepl.LSN(len(xld.WALData))
 				}
 			default:
 				if msg != nil {

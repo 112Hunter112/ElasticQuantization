@@ -16,6 +16,7 @@ type Config struct {
 	CDC           CDCConfig           `yaml:"cdc"`
 	Checker       CheckerConfig       `yaml:"checker"`
 	Healer        HealerConfig        `yaml:"healer"`
+	Guardrail     GuardrailConfig     `yaml:"guardrail"`
 }
 
 type DatabaseConfig struct {
@@ -62,6 +63,11 @@ type CheckerConfig struct {
 type HealerConfig struct {
 	Strategy   string `yaml:"strategy"`
 	MaxRetries int    `yaml:"max_retries"`
+}
+
+type GuardrailConfig struct {
+	MaxFieldCount int `yaml:"max_field_count"`
+	MaxDepth      int `yaml:"max_depth"`
 }
 
 // Load reads the configuration from the specified file path.

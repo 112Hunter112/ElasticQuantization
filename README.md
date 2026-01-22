@@ -11,6 +11,19 @@ A production-ready Go service that monitors data consistency between PostgreSQL 
 *   **Sketch-Based Aggregation:** HyperLogLog++ and Count-Min Sketch for efficient cardinality and frequency tracking.
 *   **Automatic Healing:** Configurable strategies to resolve data inconsistencies.
 
+## Observability
+
+The auditor exports Prometheus metrics at `:9090/metrics` to visualize the health and efficiency of the system.
+
+![Grafana Dashboard](https://grafana.com/api/dashboards/1860/images/8872/image)
+
+*Dashboard showing real-time consistency checks, healing rates, and compression efficiency.*
+
+### Key Metrics
+*   `discrepancies_detected_total`: Counter of data mismatches found per table.
+*   `healing_operations_total`: Counter of healing attempts (success/failure).
+*   `vector_compression_ratio_average`: Gauge showing current vector storage savings.
+
 ## Installation
 
 ### Prerequisites
@@ -49,6 +62,17 @@ The application is configured via `config/config.yaml`. Key sections include:
 ## Architecture
 
 The system consists of several internal components:
+
+```mermaid
+graph TD
+    PG[(PostgreSQL)] -->|Logical Replication| CDC[CDC Listener]
+    CDC -->|Events| Sketch[Sketch Aggregator]
+    CDC -->|Events| Checker[Consistency Checker]
+    ES[(Elasticsearch)] <-->|Query| Checker
+    Checker -->|Discrepancies| Healer[Auto Healer]
+    Healer -->|Fix| PG
+    Healer -->|Fix| ES
+```
 
 *   **CDC Listener:** Consumes replication events from PostgreSQL.
 *   **Sketch Aggregator:** Maintains probabilistic counters for stream statistics.

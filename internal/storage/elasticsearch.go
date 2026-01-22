@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/yourusername/consistency-auditor/internal/config"
+	"github.com/yourusername/consistency-auditor/internal/guardrail"
 	"github.com/yourusername/consistency-auditor/pkg/quantizer"
 )
 
@@ -15,18 +16,25 @@ type QuantizedESClient struct {
 	client    *http.Client
 	config    config.ElasticsearchConfig
 	quantizer quantizer.Quantizer
+	guardrail *guardrail.MappingGuardrail
 }
 
-func NewQuantizedESClient(cfg config.ElasticsearchConfig, q quantizer.Quantizer) (*QuantizedESClient, error) {
+func NewQuantizedESClient(cfg config.ElasticsearchConfig, guardrailCfg config.GuardrailConfig, q quantizer.Quantizer) (*QuantizedESClient, error) {
 	return &QuantizedESClient{
 		client:    &http.Client{},
 		config:    cfg,
 		quantizer: q,
+		guardrail: guardrail.NewMappingGuardrail(guardrailCfg),
 	}, nil
 }
 
 // IndexDocument indexes a document with quantized vector data.
 func (c *QuantizedESClient) IndexDocument(ctx context.Context, id string, data map[string]interface{}) error {
+	// Validate against guardrails
+	if err := c.guardrail.Validate(data); err != nil {
+		return fmt.Errorf("guardrail validation failed: %w", err)
+	}
+
 	// Check if vector exists and quantize it
 	if vec, ok := data["vector"].([]float64); ok {
 		quantized, err := c.quantizer.Quantize(vec)

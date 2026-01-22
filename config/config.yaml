@@ -1,0 +1,39 @@
+database:
+  host: "localhost"
+  port: 5432
+  user: "postgres"
+  password: "password"
+  database: "consistency_db"
+  ssl_mode: "disable"
+
+elasticsearch:
+  addresses:
+    - "http://localhost:9200"
+  username: "elastic"
+  password: "password"
+  index_name: "documents"
+
+quantizer:
+  type: "scalar"          # Options: "scalar", "pca"
+  dimensions: 768
+  reduced_dims: 128       # Only used if type is "pca"
+  bits: 8                 # Options: 8, 16
+  training_data: ""       # Path to training data JSON/CSV if needed
+
+sketch:
+  hll_precision: 14       # HyperLogLog++ precision
+  cm_sketch_width: 1000   # Count-Min Sketch width
+  cm_sketch_depth: 5      # Count-Min Sketch depth
+
+cdc:
+  slot_name: "auditor_slot"
+  publication: "auditor_pub"
+  batch_size: 1000
+  poll_interval: "100ms"
+
+checker:
+  max_retries: 3
+
+healer:
+  strategy: "trust_db"    # Options: "trust_db", "trust_es", "alert_only"
+  max_retries: 3

@@ -4,15 +4,18 @@ import (
 	"context"
 	"flag"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/yourusername/consistency-auditor/internal/cdc"
 	"github.com/yourusername/consistency-auditor/internal/checker"
 	"github.com/yourusername/consistency-auditor/internal/config"
 	"github.com/yourusername/consistency-auditor/internal/healer"
+	"github.com/yourusername/consistency-auditor/internal/metrics"
 	"github.com/yourusername/consistency-auditor/internal/storage"
 	"github.com/yourusername/consistency-auditor/pkg/quantizer"
 	"github.com/yourusername/consistency-auditor/pkg/sketch"
@@ -20,7 +23,17 @@ import (
 
 func main() {
 	configPath := flag.String("config", "config/config.yaml", "path to config file")
+	metricsAddr := flag.String("metrics-addr", ":9090", "address to listen on for metrics")
 	flag.Parse()
+
+	// Start metrics server
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		log.Printf("Metrics server listening on %s", *metricsAddr)
+		if err := http.ListenAndServe(*metricsAddr, nil); err != nil {
+			log.Fatalf("Metrics server failed: %v", err)
+		}
+	}()
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
@@ -58,7 +71,7 @@ func main() {
 		log.Printf("Quantizer trained on %d vectors", len(trainingVectors))
 	}
 
-	esClient, err := storage.NewQuantizedESClient(cfg.Elasticsearch, quantizerInstance)
+	esClient, err := storage.NewQuantizedESClient(cfg.Elasticsearch, cfg.Guardrail, quantizerInstance)
 	if err != nil {
 		log.Fatalf("Failed to connect to Elasticsearch: %v", err)
 	}
@@ -67,7 +80,7 @@ func main() {
 	log.Printf("Sketch aggregator initialized: HLL++ precision=%d, CMSketch width=%d depth=%d",
 		cfg.Sketch.HLLPrecision, cfg.Sketch.CMSketchWidth, cfg.Sketch.CMSketchDepth)
 
-	cdcListener := cdc.NewCDCListener(cfg.CDC)
+	cdcListener := cdc.NewCDCListener(cfg.CDC, cfg.Database)
 	if err := cdcListener.Start(); err != nil {
 		log.Fatalf("Failed to start CDC listener: %v", err)
 	}
@@ -84,7 +97,9 @@ func main() {
 	}
 
 	log.Println("Consistency Auditor started successfully")
-	log.Printf("Compression ratio: %.1f%%", getCompressionRatio(quantizerInstance))
+	ratio := getCompressionRatio(quantizerInstance)
+	log.Printf("Compression ratio: %.1f%%", ratio)
+	metrics.VectorCompressionRatio.Set(ratio)
 	log.Printf("Healing strategy: %s", cfg.Healer.Strategy)
 
 	sigChan := make(chan os.Signal, 1)
@@ -145,10 +160,13 @@ func (a *Auditor) processEvents() {
 			}
 
 			if len(discrepancies) > 0 {
+				metrics.DiscrepanciesTotal.WithLabelValues(event.Table).Add(float64(len(discrepancies)))
 				log.Printf("Found %d discrepancies in %s/%s", len(discrepancies), event.Table, event.ID)
 				if err := a.healer.Heal(a.ctx, discrepancies); err != nil {
+					metrics.HealingOperationsTotal.WithLabelValues(event.Table, "failure").Inc()
 					log.Printf("Error healing: %v", err)
 				} else {
+					metrics.HealingOperationsTotal.WithLabelValues(event.Table, "success").Inc()
 					log.Printf("Healed %s/%s", event.Table, event.ID)
 				}
 			}
