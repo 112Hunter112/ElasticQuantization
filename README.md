@@ -7,7 +7,7 @@ A production-ready Go service that monitors data consistency between PostgreSQL 
 *   **Change Data Capture (CDC):** Real-time monitoring of PostgreSQL logical replication streams.
 *   **Vector Quantization:**
     *   **Scalar Quantization:** 8/16-bit encoding.
-    *   **PCA Quantization:** Dimensionality reduction.
+    *   **PCA Quantization:** Dimensionality reduction. [See Mathematical Background](docs/math.md)
 *   **Sketch-Based Aggregation:** HyperLogLog++ and Count-Min Sketch for efficient cardinality and frequency tracking.
 *   **Automatic Healing:** Configurable strategies to resolve data inconsistencies.
 
@@ -15,7 +15,18 @@ A production-ready Go service that monitors data consistency between PostgreSQL 
 
 The auditor exports Prometheus metrics at `:9090/metrics` to visualize the health and efficiency of the system.
 
-![Grafana Dashboard](https://grafana.com/api/dashboards/1860/images/8872/image)
+```mermaid
+graph LR
+    subgraph Auditor_Container
+        A[Go Service] -->|Registers| M[Prometheus Registry]
+        M -->|Exposes| E[:9090/metrics]
+    end
+    
+    Prom[Prometheus Server] -->|Scrapes| E
+    Graf[Grafana Dashboard] -->|Queries| Prom
+    Graf -->|Visualizes| D[Discrepancy Rates]
+    Graf -->|Visualizes| C[Compression Ratio]
+```
 
 *Dashboard showing real-time consistency checks, healing rates, and compression efficiency.*
 
@@ -70,7 +81,6 @@ graph TD
     CDC -->|Events| Checker[Consistency Checker]
     ES[(Elasticsearch)] <-->|Query| Checker
     Checker -->|Discrepancies| Healer[Auto Healer]
-    Healer -->|Fix| PG
     Healer -->|Fix| ES
 ```
 

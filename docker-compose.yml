@@ -1,6 +1,11 @@
 services:
   auditor:
     build: .
+    # Maps the new host port to the new container port
+    ports:
+      - "8081:8081"
+    # Overrides the default CMD to specify the new metrics address
+    command: ["-config", "/app/config/config.yaml", "-metrics-addr", ":8081"]
     volumes:
       - ./config:/app/config
     depends_on:
@@ -12,6 +17,8 @@ services:
 
   postgres:
     image: postgres:15-alpine
+    # Required for CDC: enables logical decoding in the Write-Ahead Log
+    command: ["postgres", "-c", "wal_level=logical"]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password

@@ -1,5 +1,5 @@
 database:
-  host: "localhost"
+  host: "postgres"        # Pointing to the Docker service name
   port: 5432
   user: "postgres"
   password: "password"
@@ -8,13 +8,13 @@ database:
 
 elasticsearch:
   addresses:
-    - "http://localhost:9200"
+    - "http://elasticsearch:9200" # Pointing to the Docker service name
   username: "elastic"
   password: "password"
   index_name: "documents"
 
 quantizer:
-  type: "scalar"          # Options: "scalar", "pca"
+  type: "pca"          # Options: "scalar", "pca"
   dimensions: 768
   reduced_dims: 128       # Only used if type is "pca"
   bits: 8                 # Options: 8, 16
@@ -37,3 +37,7 @@ checker:
 healer:
   strategy: "trust_db"    # Options: "trust_db", "trust_es", "alert_only"
   max_retries: 3
+
+guardrail:
+  max_field_count: 100
+  max_depth: 5

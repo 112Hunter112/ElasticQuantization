@@ -39,7 +39,8 @@ func NewHyperLogLogPP(precision int) *HyperLogLogPP {
 
 func (hll *HyperLogLogPP) Add(item string) {
 	hash := hashString(item)
-	idx := hash & (hll.m - 1)
+	// Cast hll.m-1 to uint64 so it matches the type of 'hash'
+	idx := hash & uint64(hll.m-1)
 	w := hash >> hll.precision
 
 	leadingZeros := uint8(bits.LeadingZeros64(w)) + 1

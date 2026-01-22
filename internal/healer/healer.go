@@ -47,28 +47,59 @@ func (h *AutoHealer) healSingle(ctx context.Context, d checker.Discrepancy) erro
 	log.Printf("Healing %s/%s field %s", d.Table, d.ID, d.Field)
 
 	// Fetch fresh data from Source of Truth (DB)
-	var content string
-	var vector []byte // Placeholder for vector data handling
-	
-	query := fmt.Sprintf("SELECT content FROM %s WHERE id = $1", d.Table)
-	err := h.db.QueryRowContext(ctx, query, d.ID).Scan(&content)
+	query := fmt.Sprintf("SELECT * FROM %s WHERE id = $1", d.Table)
+	rows, err := h.db.QueryContext(ctx, query, d.ID)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			// Delete from ES if it doesn't exist in DB
-			// implementation left as exercise
-			return nil
+		return fmt.Errorf("querying db for healing: %w", err)
+	}
+	defer rows.Close()
+
+	var dbData map[string]interface{}
+	if rows.Next() {
+		dbData, err = h.scanRowToMap(rows)
+		if err != nil {
+			return fmt.Errorf("scanning row for healing: %w", err)
 		}
-		return err
+	} else {
+		// Record deleted in DB, delete from ES
+		// In a real implementation, we would call DeleteDocument here
+		log.Printf("Record %s/%s deleted in DB, skipping ES update (delete not implemented)", d.Table, d.ID)
+		return nil
 	}
 
 	// Upsert to ES
-	doc := map[string]interface{}{
-		"content": content,
-		// "vector": ... need logic to fetch and deserialize vector
-	}
-	
-	// Use _ if vector is unused for now
-	_ = vector
+	// Note: basic upsert using the data found in DB.
+	// We might need to handle specific vector fields if they exist in the map
+	return h.es.IndexDocument(ctx, d.ID, dbData)
+}
 
-	return h.es.IndexDocument(ctx, d.ID, doc)
+func (h *AutoHealer) scanRowToMap(rows *sql.Rows) (map[string]interface{}, error) {
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	values := make([]interface{}, len(cols))
+	valuePtrs := make([]interface{}, len(cols))
+	for i := range values {
+		valuePtrs[i] = &values[i]
+	}
+
+	if err := rows.Scan(valuePtrs...); err != nil {
+		return nil, err
+	}
+
+	entry := make(map[string]interface{})
+	for i, col := range cols {
+		val := values[i]
+
+		b, ok := val.([]byte)
+		if ok {
+			entry[col] = string(b)
+		} else {
+			entry[col] = val
+		}
+	}
+
+	return entry, nil
 }

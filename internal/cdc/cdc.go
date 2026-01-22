@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pglogrepl"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgproto3/v2"
+	"github.com/jackc/pgx/v5/pgproto3"
 	"github.com/yourusername/consistency-auditor/internal/config"
 )
 
@@ -201,7 +201,7 @@ func (l *CDCListener) processLogicalMsg(data []byte) {
 			log.Printf("Unknown relation ID: %d", logicalMsg.RelationID)
 			return
 		}
-		
+
 		// For DELETE, we rely on OldTuple (requires REPLICA IDENTITY FULL)
 		var data map[string]interface{}
 		if logicalMsg.OldTuple != nil {

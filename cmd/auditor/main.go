@@ -76,9 +76,12 @@ func main() {
 		log.Fatalf("Failed to connect to Elasticsearch: %v", err)
 	}
 
-	sketchAgg := sketch.NewSketchAggregator(cfg.Sketch)
-	log.Printf("Sketch aggregator initialized: HLL++ precision=%d, CMSketch width=%d depth=%d",
-		cfg.Sketch.HLLPrecision, cfg.Sketch.CMSketchWidth, cfg.Sketch.CMSketchDepth)
+	// Create a sketch.SketchConfig using values from the global config
+	sketchAgg := sketch.NewSketchAggregator(sketch.SketchConfig{
+		HLLPrecision:  cfg.Sketch.HLLPrecision,
+		CMSketchWidth: cfg.Sketch.CMSketchWidth,
+		CMSketchDepth: cfg.Sketch.CMSketchDepth,
+	})
 
 	cdcListener := cdc.NewCDCListener(cfg.CDC, cfg.Database)
 	if err := cdcListener.Start(); err != nil {

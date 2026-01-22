@@ -14,7 +14,7 @@ RUN go mod download
 COPY . .
 
 # Build the binary
-RUN go build -o /bin/auditor ./cmd/auditor
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/auditor ./cmd/auditor
 
 # Use a minimal runtime image
 FROM alpine:3.18
