@@ -9,7 +9,6 @@ import (
 
 	"github.com/yourusername/consistency-auditor/pkg/quantizer"
 	"github.com/yourusername/consistency-auditor/pkg/sketch"
-	"gonum.org/v1/gonum/mat"
 )
 
 const (
