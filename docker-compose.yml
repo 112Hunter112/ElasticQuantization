@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  auditor:
+    build: .
+    volumes:
+      - ./config:/app/config
+    depends_on:
+      - postgres
+      - elasticsearch
+    environment:
+      - POSTGRES_HOST=postgres
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: consistency_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.9.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
