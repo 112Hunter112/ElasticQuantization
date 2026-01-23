@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"flag"
+	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -16,7 +20,7 @@ import (
 	"github.com/yourusername/consistency-auditor/internal/config"
 	"github.com/yourusername/consistency-auditor/internal/healer"
 	"github.com/yourusername/consistency-auditor/internal/metrics"
-	"github.com/yourusername/consistency-auditor/internal/ml" // Import the ML package
+	"github.com/yourusername/consistency-auditor/internal/ml"
 	"github.com/yourusername/consistency-auditor/internal/storage"
 	"github.com/yourusername/consistency-auditor/pkg/quantizer"
 	"github.com/yourusername/consistency-auditor/pkg/sketch"
@@ -41,9 +45,9 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// 1. Initialize ML Client ("The Brain")
-	// Point to the internal Docker DNS name 'ml-service' on port 5000
-	mlClient := ml.NewClient("http://ml-service:5000")
+	mlURL := fmt.Sprintf("http://%s:%d", cfg.NeuralODE.Host, cfg.NeuralODE.Port)
+	mlClient := ml.NewClient(mlURL)
+	log.Printf("Connected to Neural ODE Service at %s", mlURL)
 	log.Println("Neural ODE Client initialized")
 
 	db, err := storage.NewPostgresDB(cfg.Database)
@@ -69,13 +73,22 @@ func main() {
 		log.Fatalf("Unknown quantizer type: %s", cfg.Quantizer.Type)
 	}
 
+	// Train the quantizer
+	// CRITICAL FIX: Always train, even if config is empty, to prevent nil pointer crashes
+	var trainingVectors [][]float64
 	if len(cfg.Quantizer.TrainingData) > 0 {
-		trainingVectors := loadTrainingData(cfg.Quantizer.TrainingData)
-		if err := quantizerInstance.Fit(trainingVectors); err != nil {
-			log.Fatalf("Failed to train quantizer: %v", err)
-		}
-		log.Printf("Quantizer trained on %d vectors", len(trainingVectors))
+		trainingVectors = loadTrainingData(cfg.Quantizer.TrainingData)
+	} else {
+		log.Println("⚠️ No training data provided in config. Generating synthetic data for initial PCA...")
+		// Generate enough random vectors to ensure PCA doesn't fail mathematically
+		// Use Dimensions + 10 to ensure we have more samples than dimensions for stability
+		trainingVectors = generateSyntheticData(cfg.Quantizer.Dimensions, cfg.Quantizer.Dimensions+10)
 	}
+
+	if err := quantizerInstance.Fit(trainingVectors); err != nil {
+		log.Fatalf("Failed to train quantizer: %v", err)
+	}
+	log.Printf("Quantizer trained on %d vectors", len(trainingVectors))
 
 	esClient, err := storage.NewQuantizedESClient(cfg.Elasticsearch, cfg.Guardrail, quantizerInstance)
 	if err != nil {
@@ -95,7 +108,6 @@ func main() {
 	}
 	defer cdcListener.Stop()
 
-	// 2. Inject ML Client into Consistency Checker
 	consistencyChecker := checker.NewConsistencyChecker(db, esClient, cfg.Checker, sketchAgg, mlClient)
 
 	autoHealer := healer.NewAutoHealer(db, esClient, cfg.Healer)
@@ -225,11 +237,52 @@ func (a *Auditor) Stop() {
 	a.cancel()
 }
 
+// loadTrainingData loads vectors from a CSV file.
+// If the file is missing, it generates synthetic data to prevent crashes.
 func loadTrainingData(path string) [][]float64 {
-	return [][]float64{
-		{0.1, 0.2, 0.3, 0.4},
-		{0.5, 0.6, 0.7, 0.8},
+	f, err := os.Open(path)
+	if err != nil {
+		log.Printf("Training data not found at %s. Generating synthetic 768-dim data for PCA...", path)
+		return generateSyntheticData(768, 100) // 100 samples of 768 dimensions
 	}
+	defer f.Close()
+
+	reader := csv.NewReader(f)
+	records, err := reader.ReadAll()
+	if err != nil {
+		log.Printf("Error reading CSV: %v. Using synthetic data.", err)
+		return generateSyntheticData(768, 100)
+	}
+
+	var data [][]float64
+	for _, row := range records {
+		var vec []float64
+		for _, val := range row {
+			if v, err := strconv.ParseFloat(val, 64); err == nil {
+				vec = append(vec, v)
+			}
+		}
+		// Ensure we only keep valid vectors
+		if len(vec) > 0 {
+			data = append(data, vec)
+		}
+	}
+
+	log.Printf("Loaded %d training vectors from %s", len(data), path)
+	return data
+}
+
+// Helper to prevent crashes if no data exists
+func generateSyntheticData(dim, samples int) [][]float64 {
+	data := make([][]float64, samples)
+	for i := 0; i < samples; i++ {
+		vec := make([]float64, dim)
+		for j := 0; j < dim; j++ {
+			vec[j] = rand.Float64()
+		}
+		data[i] = vec
+	}
+	return data
 }
 
 func getCompressionRatio(q quantizer.Quantizer) float64 {
