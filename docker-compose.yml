@@ -37,6 +37,7 @@ services:
     ports:
       - "9200:9200"
 
+
   ml-service:
     build: 
       context: ./ml_service
@@ -47,14 +48,17 @@ services:
       - "5001:5001"
     volumes:
       - ./ml_service/config.yaml:/app/config.yaml
-    # Optional: Enable GPU support if you have Nvidia drivers installed
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+    
+    # --- AMD GPU PASSTHROUGH START ---
+    devices:
+      - /dev/kfd:/dev/kfd   # Main compute interface
+      - /dev/dri:/dev/dri   # Direct Rendering Infrastructure
+    group_add:
+      - video               # Grant permission to video group
+    security_opt:
+      - seccomp:unconfined  # Often required for GPU access
+    # --- AMD GPU PASSTHROUGH END ---
+
     environment:
-      - JAX_PLATFORMS=cpu   # <--- ADD THIS LINE
+      - JAX_PLATFORMS=rocm  # Changed from 'cpu' to 'rocm'
     restart: on-failure
