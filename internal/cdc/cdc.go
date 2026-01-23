@@ -43,7 +43,7 @@ func NewCDCListener(cfg config.CDCConfig, dbCfg config.DatabaseConfig) *CDCListe
 	return &CDCListener{
 		config:    cfg,
 		dbConfig:  dbCfg,
-		eventChan: make(chan Event, 1000), // Buffered channel
+		eventChan: make(chan Event, 1000),
 		stopChan:  make(chan struct{}),
 		relations: make(map[uint32]*pglogrepl.RelationMessage),
 	}
@@ -222,13 +222,12 @@ func (l *CDCListener) extractData(rel *pglogrepl.RelationMessage, tuple *pglogre
 		}
 		colName := rel.Columns[idx].Name
 		switch col.DataType {
-		case 'n': // null
+		case 'n':
 			data[colName] = nil
-		case 't': // text
+		case 't':
 			val := string(col.Data)
 			data[colName] = val
-		case 'u': // unchanged toast
-			// data[colName] = ... (value unchanged)
+		case 'u':
 		}
 	}
 	return data

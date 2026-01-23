@@ -18,6 +18,7 @@ from typing import Tuple, Optional, List, Dict, Callable, Any
 from dataclasses import dataclass
 import chex
 from functools import partial
+from sentence_transformers import SentenceTransformer
 
 
 @dataclass(frozen=True)
@@ -68,7 +69,6 @@ class TemporalAttention(eqx.Module):
         """
         B, N, C = x.shape
         
-        # FIXED: Proper nested vmap for [batch, seq] grid
         # Apply linear to each (batch, seq) position
         qkv = jax.vmap(jax.vmap(self.qkv_proj))(x)  # [B, N, 3*C]
         
@@ -88,7 +88,6 @@ class TemporalAttention(eqx.Module):
         x = jnp.einsum('bhqk,bhvd->bhqd', attn, v)
         x = jnp.transpose(x, (0, 2, 1, 3)).reshape(B, N, C)
         
-        # FIXED: Proper nested vmap for output projection
         x = jax.vmap(jax.vmap(self.out_proj))(x)
         
         return x
@@ -276,7 +275,7 @@ class ContinuousNormalizingFlow(eqx.Module):
 
 
 class LatentODEEncoder(eqx.Module):
-    """Encoder with GRU - FIXED dimension handling"""
+    """Encoder with GRU"""
     gru: eqx.nn.GRUCell
     attention: TemporalAttention
     fc_mu: eqx.nn.Linear
@@ -290,7 +289,6 @@ class LatentODEEncoder(eqx.Module):
         # GRU processes concatenated input+time
         self.gru = eqx.nn.GRUCell(input_dim + 1, hidden_dim, key=keys[0])
         
-        # FIXED: Attention must match hidden_dim, with proper head count
         attn_heads = max(1, min(8, hidden_dim // 16))
         # Ensure divisibility
         if hidden_dim % attn_heads != 0:
@@ -324,7 +322,6 @@ class LatentODEEncoder(eqx.Module):
             _, h_seq = jax.lax.scan(step_fn, h0, xt_seq)
             return h_seq
         
-        # FIXED: Proper vmap over batch dimension
         h_all = jax.vmap(process_sequence)(xt)  # [batch, seq, hidden_dim]
         
         # Apply attention
@@ -333,7 +330,6 @@ class LatentODEEncoder(eqx.Module):
         # Take final hidden state
         h_final = h_attn[:, -1, :]  # [batch, hidden_dim]
         
-        # FIXED: Proper vmap for fc layers
         mu = jax.vmap(self.fc_mu)(h_final)
         logvar = jax.vmap(self.fc_logvar)(h_final)
         
@@ -341,7 +337,7 @@ class LatentODEEncoder(eqx.Module):
 
 
 class LatentODEDecoder(eqx.Module):
-    """Decoder - FIXED to handle batched inputs properly"""
+    """Decoder"""
     layer1: eqx.nn.Linear
     layer2: eqx.nn.Linear
     layer3: eqx.nn.Linear
@@ -390,7 +386,6 @@ class NeuralODEConsistencyPredictor(eqx.Module):
         self.config = config or ODEConfig()
         keys = jr.split(key, 4)
         
-        # FIXED: Proper encoder hidden dimension calculation
         encoder_hidden = max(32, self.config.latent_dim * 2)
         # Ensure divisibility for attention
         if encoder_hidden < 16:
@@ -455,7 +450,6 @@ class NeuralODEConsistencyPredictor(eqx.Module):
                     max_steps=5000
                 )
                 z_pred = solution.ys[-1]
-                # FIXED: Decoder handles single vector properly
                 x_pred = self.decoder(z_pred)
                 predictions.append(x_pred)
             
@@ -556,7 +550,6 @@ def train_step(
         keys = jr.split(key, 2)
         mu, logvar = model.encoder(x_batch, t_batch, key=keys[0])
         z0 = model.reparameterize(mu, logvar, key=keys[1])
-        # FIXED: Decoder handles batched input
         x_pred = model.decoder(z0)
         losses = model.compute_trajectory_loss(x_target, x_pred, mu, logvar)
         return losses['total'], losses
@@ -572,6 +565,10 @@ def train_step(
 from flask import Flask, request, jsonify
 import numpy as np
 import threading
+
+print("Loading Embedding Model (all-mpnet-base-v2)...")
+embedder = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
+print("Embedding Model Loaded.")
 
 app = Flask(__name__)
 
@@ -599,7 +596,6 @@ class ModelState:
                 print(f"Initializing model with input_dim={input_dim}")
                 self.input_dim = input_dim
                 
-                # FIXED: Smart dimension scaling
                 latent_dim = max(16, min(128, input_dim * 8))
                 attention_heads = min(8, latent_dim // 16)
                 attention_heads = max(1, attention_heads)
@@ -677,7 +673,6 @@ def predict():
         )
         
         return jsonify({
-            # FIXED: Access [0] for the first target time, not [0,0]
             'predicted_vector': pred_mean[0].tolist(),       # Returns full vector [dim]
             'uncertainty': float(pred_std[0].mean()),        # Mean uncertainty across dims
             'anomaly_score': float(anomaly_scores[0]),       # Scalar score for target
@@ -719,6 +714,25 @@ def check_stiffness():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+    
+@app.route('/generate_embedding', methods=['POST'])
+def generate_embedding():
+    try:
+        data = request.json
+        text = data.get('text', '')
+        
+        if not text:
+            return jsonify({"error": "No text provided"}), 400
+
+        # Generate 768-dim vector
+        embedding = embedder.encode(text).tolist()
+        
+        return jsonify({
+            "embedding": embedding,
+            "dimensions": len(embedding)
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == '__main__':
@@ -728,11 +742,6 @@ if __name__ == '__main__':
     print(f"JAX version: {jax.__version__}")
     print(f"Devices: {jax.devices()}")
     print(f"Backend: {jax.default_backend()}")
-    print()
-    print("✓ All dimension handling issues fixed")
-    print("✓ Proper nested vmap patterns")
-    print("✓ Smart architecture scaling")
-    print("✓ Thread-safe state management")
     print()
     print("Model initializes on first request")
     print("Service ready on http://0.0.0.0:5000")

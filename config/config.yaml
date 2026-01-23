@@ -18,7 +18,7 @@ quantizer:
   dimensions: 768
   reduced_dims: 128       # Only used if type is "pca"
   bits: 8                 # Options: 8, 16
-  training_data: ""       # Path to training data JSON/CSV if needed
+  training_data: "/app/config/training_data.csv"      # Path to training data JSON/CSV if needed
 
 sketch:
   hll_precision: 14       # HyperLogLog++ precision

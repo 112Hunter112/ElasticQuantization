@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv" // <--- Added
+	"strings" // <--- Added
 
 	"github.com/yourusername/consistency-auditor/internal/config"
 	"github.com/yourusername/consistency-auditor/internal/guardrail"
@@ -35,14 +37,32 @@ func (c *QuantizedESClient) IndexDocument(ctx context.Context, id string, data m
 		return fmt.Errorf("guardrail validation failed: %w", err)
 	}
 
-	// Check if vector exists and quantize it
-	if vec, ok := data["vector"].([]float64); ok {
+	// Check if vector exists (handle both []float64 and string formats)
+	var vec []float64
+
+	// Case 1: Already a slice of floats (Native Driver)
+	if v, ok := data["embedding"].([]float64); ok {
+		vec = v
+	} else if vStr, ok := data["embedding"].(string); ok {
+		// Case 2: String format "[0.1, 0.2]" - Parse it manually
+		vStr = strings.Trim(vStr, "[]")
+		parts := strings.Split(vStr, ",")
+		vec = make([]float64, 0, len(parts))
+		for _, p := range parts {
+			if f, err := strconv.ParseFloat(strings.TrimSpace(p), 64); err == nil {
+				vec = append(vec, f)
+			}
+		}
+	}
+
+	// Perform Quantization if we successfully extracted a vector
+	if len(vec) > 0 {
 		quantized, err := c.quantizer.Quantize(vec)
 		if err != nil {
 			return fmt.Errorf("quantizing vector: %w", err)
 		}
 		data["vector_quantized"] = quantized
-		delete(data, "vector") // Remove original vector to save space
+		delete(data, "embedding") // Remove original vector to save space
 	}
 
 	body, err := json.Marshal(data)

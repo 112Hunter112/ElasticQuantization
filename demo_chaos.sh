@@ -26,7 +26,7 @@ sleep 2
 # curl -s "$ES_URL/$INDEX/_doc/$ID" | grep "Original Title"
 
 # 3. Create Discrepancy: Manually corrupt Elasticsearch data
-echo "[2] 😈 SABOTAGE: Manually corrupting Elasticsearch data..."
+echo "[2] SABOTAGE: Manually corrupting Elasticsearch data..."
 curl -X PUT "$ES_URL/$INDEX/_doc/$ID?refresh=true" -H 'Content-Type: application/json' -d '{
     "title": "HACKED TITLE",
     "content": "This data has been corrupted by the chaos script!",

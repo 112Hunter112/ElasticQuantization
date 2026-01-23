@@ -11,6 +11,7 @@ import (
 type Config struct {
 	Database      DatabaseConfig      `yaml:"database"`
 	Elasticsearch ElasticsearchConfig `yaml:"elasticsearch"`
+	NeuralODE     NeuralODEConfig     `yaml:"neural_ode"` // Added this field
 	Quantizer     QuantizerConfig     `yaml:"quantizer"`
 	Sketch        SketchConfig        `yaml:"sketch"`
 	CDC           CDCConfig           `yaml:"cdc"`
@@ -35,12 +36,18 @@ type ElasticsearchConfig struct {
 	IndexName string   `yaml:"index_name"`
 }
 
+// NeuralODEConfig holds connection details for the ML service
+type NeuralODEConfig struct {
+	Host string `yaml:"host"`
+	Port int    `yaml:"port"`
+}
+
 type QuantizerConfig struct {
-	Type         string  `yaml:"type"`
-	Dimensions   int     `yaml:"dimensions"`
-	ReducedDims  int     `yaml:"reduced_dims"`
-	Bits         int     `yaml:"bits"`
-	TrainingData string  `yaml:"training_data"`
+	Type         string `yaml:"type"`
+	Dimensions   int    `yaml:"dimensions"`
+	ReducedDims  int    `yaml:"reduced_dims"`
+	Bits         int    `yaml:"bits"`
+	TrainingData string `yaml:"training_data"`
 }
 
 type SketchConfig struct {
@@ -50,10 +57,10 @@ type SketchConfig struct {
 }
 
 type CDCConfig struct {
-	SlotName      string `yaml:"slot_name"`
-	Publication   string `yaml:"publication"`
-	BatchSize     int    `yaml:"batch_size"`
-	PollInterval  string `yaml:"poll_interval"`
+	SlotName     string `yaml:"slot_name"`
+	Publication  string `yaml:"publication"`
+	BatchSize    int    `yaml:"batch_size"`
+	PollInterval string `yaml:"poll_interval"`
 }
 
 type CheckerConfig struct {

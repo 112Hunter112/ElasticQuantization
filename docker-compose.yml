@@ -1,10 +1,8 @@
 services:
   auditor:
     build: .
-    # Maps the new host port to the new container port
     ports:
       - "8081:8081"
-    # Overrides the default CMD to specify the new metrics address
     command: ["-config", "/app/config/config.yaml", "-metrics-addr", ":8081"]
     volumes:
       - ./config:/app/config
@@ -18,7 +16,6 @@ services:
 
   postgres:
     image: pgvector/pgvector:pg15
-    # Required for CDC: enables logical decoding in the Write-Ahead Log
     command: ["postgres", "-c", "wal_level=logical"]
     environment:
       POSTGRES_USER: postgres
@@ -37,7 +34,6 @@ services:
     ports:
       - "9200:9200"
 
-
   ml-service:
     build: 
       context: ./ml_service
@@ -48,17 +44,18 @@ services:
       - "5001:5001"
     volumes:
       - ./ml_service/config.yaml:/app/config.yaml
-    
-    # --- AMD GPU PASSTHROUGH START ---
-    devices:
-      - /dev/kfd:/dev/kfd   # Main compute interface
-      - /dev/dri:/dev/dri   # Direct Rendering Infrastructure
-    group_add:
-      - video               # Grant permission to video group
-    security_opt:
-      - seccomp:unconfined  # Often required for GPU access
-    # --- AMD GPU PASSTHROUGH END ---
-
+    shm_size: '2gb'
     environment:
-      - JAX_PLATFORMS=rocm  # Changed from 'cpu' to 'rocm'
+      # See logs instantly (Vital for debugging)
+      - PYTHONUNBUFFERED=1
+      # Force CPU mode
+      - JAX_PLATFORMS=cpu
+      # Memory safety
+      - XLA_PYTHON_CLIENT_MEM_FRACTION=0.10
+      - XLA_PYTHON_CLIENT_PREALLOCATE=false
+      - XLA_PYTHON_CLIENT_ALLOCATOR=platform
+      # Thread safety (Keep these!)
+      - OMP_NUM_THREADS=1
+      - MKL_NUM_THREADS=1
+      # REMOVED: MKL_SERVICE_FORCE_INTEL=1 (Causing crashes on AMD)
     restart: on-failure

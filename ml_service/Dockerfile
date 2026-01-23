@@ -1,28 +1,35 @@
-FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+# Use standard Python image (Already contains Python 3.10 and Pip)
+FROM python:3.10-slim
 
-# Install Python
+# Install system dependencies
+# libgomp1 is CRITICAL for PyTorch/Sentence-Transformers on CPU
 RUN apt-get update && apt-get install -y \
-    python3.10 \
-    python3-pip \
+    git \
+    build-essential \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install JAX and dependencies
+# Installing JAX and other dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Upgrade pip and install requirements
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY neural_ode_service_jax.py .
 COPY config.yaml .
-# Copy subdirectories if they exist (optional)
-# COPY benchmarks ./benchmarks
-# COPY examples ./examples
 
-# Environment variables for JAX optimization
+COPY benchmarks ./benchmarks
+COPY examples ./examples
+
+# Environment variables
 ENV XLA_PYTHON_CLIENT_PREALLOCATE=false
 ENV XLA_PYTHON_CLIENT_MEM_FRACTION=0.9
 ENV JAX_ENABLE_X64=true
+# Force CPU platform
+ENV JAX_PLATFORMS=cpu
 
 # Expose API and Metrics ports
 EXPOSE 5000 5001
