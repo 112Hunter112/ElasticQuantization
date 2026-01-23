@@ -46,6 +46,10 @@ func (h *AutoHealer) Heal(ctx context.Context, discrepancies []checker.Discrepan
 func (h *AutoHealer) healSingle(ctx context.Context, d checker.Discrepancy) error {
 	log.Printf("Healing %s/%s field %s", d.Table, d.ID, d.Field)
 
+	if err := validateTableName(d.Table); err != nil {
+		return fmt.Errorf("invalid table name: %w", err)
+	}
+
 	// Fetch fresh data from Source of Truth (DB)
 	query := fmt.Sprintf("SELECT * FROM %s WHERE id = $1", d.Table)
 	rows, err := h.db.QueryContext(ctx, query, d.ID)
@@ -62,8 +66,10 @@ func (h *AutoHealer) healSingle(ctx context.Context, d checker.Discrepancy) erro
 		}
 	} else {
 		// Record deleted in DB, delete from ES
-		// In a real implementation, we would call DeleteDocument here
-		log.Printf("Record %s/%s deleted in DB, skipping ES update (delete not implemented)", d.Table, d.ID)
+		log.Printf("Record %s/%s deleted in DB, deleting from ES", d.Table, d.ID)
+		if err := h.es.DeleteDocument(ctx, d.ID); err != nil {
+			return fmt.Errorf("deleting document from ES: %w", err)
+		}
 		return nil
 	}
 
@@ -102,4 +108,16 @@ func (h *AutoHealer) scanRowToMap(rows *sql.Rows) (map[string]interface{}, error
 	}
 
 	return entry, nil
+}
+
+func validateTableName(table string) error {
+	if table == "" {
+		return fmt.Errorf("table name is empty")
+	}
+	for _, r := range table {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '.') {
+			return fmt.Errorf("invalid character in table name: %c", r)
+		}
+	}
+	return nil
 }

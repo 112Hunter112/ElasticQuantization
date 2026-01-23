@@ -48,6 +48,10 @@ func NewConsistencyChecker(
 }
 
 func (c *ConsistencyChecker) CheckRecord(ctx context.Context, table, id string) ([]Discrepancy, error) {
+	if err := validateTableName(table); err != nil {
+		return nil, fmt.Errorf("invalid table name: %w", err)
+	}
+
 	// 1. Fetch from DB
 	query := fmt.Sprintf("SELECT * FROM %s WHERE id = $1", table)
 	rows, err := c.db.QueryContext(ctx, query, id)
@@ -270,4 +274,17 @@ func (c *ConsistencyChecker) scanRowToMap(rows *sql.Rows) (map[string]interface{
 		}
 	}
 	return entry, nil
+}
+
+func validateTableName(table string) error {
+	if table == "" {
+		return fmt.Errorf("table name is empty")
+	}
+	// Allow only alphanumeric characters, underscores, and dots (for schema.table)
+	for _, r := range table {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '.') {
+			return fmt.Errorf("invalid character in table name: %c", r)
+		}
+	}
+	return nil
 }

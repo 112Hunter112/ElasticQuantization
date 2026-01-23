@@ -114,3 +114,28 @@ func (c *QuantizedESClient) GetDocument(ctx context.Context, id string) (map[str
 
 	return result, nil
 }
+
+// DeleteDocument removes a document from the index.
+func (c *QuantizedESClient) DeleteDocument(ctx context.Context, id string) error {
+	url := fmt.Sprintf("%s/%s/_doc/%s", c.config.Addresses[0], c.config.IndexName, id)
+	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	if err != nil {
+		return fmt.Errorf("creating delete request: %w", err)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("executing delete request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 404 {
+		return nil // Already deleted
+	}
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("elasticsearch delete error: %s", resp.Status)
+	}
+
+	return nil
+}
