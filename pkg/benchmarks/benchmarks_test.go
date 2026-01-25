@@ -63,7 +63,18 @@ func TestMemoryFootprint(t *testing.T) {
 	fmt.Printf("\n=== Memory Footprint Benchmark (N=%d) ===\n", numItems)
 	fmt.Printf("Standard Map[string]int: %d MB\n", bToMb(mapMem))
 	fmt.Printf("CountMinSketch:          %d MB\n", bToMb(cmsMem))
-	fmt.Printf("Savings:                 %.2f%%\n", float64(mapMem-cmsMem)/float64(mapMem)*100)
+
+	if mapMem > 0 {
+		var savings float64
+		if mapMem > cmsMem {
+			savings = float64(mapMem-cmsMem) / float64(mapMem) * 100
+		} else {
+			savings = 0 // No savings or measurement noise
+		}
+		fmt.Printf("Savings:                 %.2f%%\n", savings)
+	} else {
+		fmt.Println("Savings:                 N/A (Map memory too low)")
+	}
 }
 
 func TestRecall(t *testing.T) {

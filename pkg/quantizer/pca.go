@@ -2,7 +2,8 @@ package quantizer
 
 import (
 	"fmt"
-	
+	"sort"
+
 	"gonum.org/v1/gonum/mat"
 	"gonum.org/v1/gonum/stat"
 )
@@ -60,7 +61,7 @@ func (pq *PCAQuantizer) Fit(vectors [][]float64) error {
 	eig.VectorsTo(&vectors_eig)
 
 	type eigenPair struct {
-		value  complex128
+		value  float64
 		vector []float64
 	}
 
@@ -70,8 +71,13 @@ func (pq *PCAQuantizer) Fit(vectors [][]float64) error {
 		for j := 0; j < pq.originalDims; j++ {
 			vec[j] = real(vectors_eig.At(j, i))
 		}
-		pairs[i] = eigenPair{value: values[i], vector: vec}
+		pairs[i] = eigenPair{value: real(values[i]), vector: vec}
 	}
+
+	// Sort by eigenvalue descending
+	sort.Slice(pairs, func(i, j int) bool {
+		return pairs[i].value > pairs[j].value
+	})
 
 	pq.components = mat.NewDense(pq.reducedDims, pq.originalDims, nil)
 	for i := 0; i < pq.reducedDims; i++ {
