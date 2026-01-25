@@ -566,9 +566,18 @@ from flask import Flask, request, jsonify
 import numpy as np
 import threading
 
-print("Loading Embedding Model (all-mpnet-base-v2)...")
-embedder = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
-print("Embedding Model Loaded.")
+# Lazy loading for embedder
+embedder = None
+embedder_lock = threading.Lock()
+
+def get_embedder():
+    global embedder
+    with embedder_lock:
+        if embedder is None:
+            print("Loading Embedding Model (all-mpnet-base-v2)...")
+            embedder = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
+            print("Embedding Model Loaded.")
+    return embedder
 
 app = Flask(__name__)
 
@@ -725,7 +734,8 @@ def generate_embedding():
             return jsonify({"error": "No text provided"}), 400
 
         # Generate 768-dim vector
-        embedding = embedder.encode(text).tolist()
+        model = get_embedder()
+        embedding = model.encode(text).tolist()
         
         return jsonify({
             "embedding": embedding,

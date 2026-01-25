@@ -34,4 +34,6 @@ ENV JAX_PLATFORMS=cpu
 # Expose API and Metrics ports
 EXPOSE 5000 5001
 
-CMD ["python3", "neural_ode_service_jax.py"]
+# NEW: Increased timeout to 600s (10 minutes) to allow slow model loading on CPU
+# Ensure this is the EXACT last line
+CMD ["gunicorn", "-w", "1", "--threads", "4", "-b", "0.0.0.0:5000", "--timeout", "600", "neural_ode_service_jax:app"]

@@ -46,16 +46,18 @@ services:
       - ./ml_service/config.yaml:/app/config.yaml
     shm_size: '2gb'
     environment:
-      # See logs instantly (Vital for debugging)
       - PYTHONUNBUFFERED=1
-      # Force CPU mode
       - JAX_PLATFORMS=cpu
-      # Memory safety
       - XLA_PYTHON_CLIENT_MEM_FRACTION=0.10
       - XLA_PYTHON_CLIENT_PREALLOCATE=false
       - XLA_PYTHON_CLIENT_ALLOCATOR=platform
-      # Thread safety (Keep these!)
       - OMP_NUM_THREADS=1
       - MKL_NUM_THREADS=1
-      # REMOVED: MKL_SERVICE_FORCE_INTEL=1 (Causing crashes on AMD)
     restart: on-failure
+    # ADD THIS SECTION:
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s # Gives the AI model 5 minutes to load
